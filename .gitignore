@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.eval/
+*.db
+*.db-wal
+*.db-shm
+prices.json
+.env
+*.pdf
+demo.db
