@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Quorum | Research workspace</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/static/style.css" />
+    <script src="/static/app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <aside class="sidebar">
+      <a class="brand" href="#research"
+        ><svg viewBox="0 0 40 44" aria-hidden="true">
+          <path
+            d="M20 3 35 12v18L20 39 5 30V12Z M25 34l10 7"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="4"
+          /></svg
+        ><span>Quorum<small>Research workspace</small></span></a
+      >
+      <nav aria-label="Workspace">
+        <a href="#documents" data-page="documents"
+          ><span data-icon="document"></span>Documents</a
+        >
+        <a href="#research" data-page="research"
+          ><span data-icon="search"></span>Research</a
+        >
+        <a href="#architecture" data-page="architecture"
+          ><span data-icon="layers"></span>Architecture</a
+        >
+        <a href="#evaluation" data-page="evaluation"
+          ><span data-icon="chart"></span>Evaluation</a
+        >
+        <a href="#recovery" data-page="recovery"
+          ><span data-icon="refresh"></span>Recovery</a
+        >
+        <a href="#retrieval" data-page="retrieval"
+          ><span data-icon="document"></span>Document search</a
+        >
+        <a href="#limits" data-page="limits"
+          ><span data-icon="clock"></span>Usage limits</a
+        >
+      </nav>
+      <div class="offline">
+        <span class="dot"></span>
+        <div id="provider-status">
+          Local workspace<small>Checking provider...</small>
+        </div>
+      </div>
+    </aside>
+    <div class="workspace">
+      <header>
+        <span id="page-label">Research workspace</span
+        ><button class="secondary" id="present">
+          <span data-icon="screen"></span>Presentation mode
+        </button>
+      </header>
+      <main id="main">
+        <div id="global-error" role="alert" hidden></div>
+        <div id="public-notice" class="note" hidden>
+          Interactive prototype: real workflow execution with repeatable test
+          responses, not live AI research. No API key needed.
+          <a
+            href="https://github.com/SakshamKotecha05/quorum"
+            target="_blank"
+            rel="noopener"
+            >View source</a
+          >
+        </div>
+        <section id="documents" class="page" hidden>
+          <h1>Start with your sources.</h1>
+          <p class="intro">
+            Add the documents you want Quorum to research. Every claim starts
+            here.
+          </p>
+          <form id="upload-form" class="panel">
+            <h2>Add research documents</h2>
+            <p>
+              Choose Markdown or text files. You can add all four sample
+              documents at once.
+            </p>
+            <label for="document-files">Choose documents</label>
+            <input
+              id="document-files"
+              type="file"
+              accept=".md,.txt"
+              multiple
+              required
+              aria-describedby="upload-hint"
+            />
+            <p id="upload-hint" class="hint">
+              .md or .txt, UTF-8. Up to 200 KB per file, 20 files and 1 MB
+              total. Adding the same filename replaces its uploaded copy.
+            </p>
+            <button id="upload-button" type="submit">Add documents</button>
+            <button id="sample-button" type="button" class="secondary" hidden>
+              Use sample documents
+            </button>
+            <p id="upload-status" role="status"></p>
+          </form>
+          <div class="panel">
+            <div class="section-heading">
+              <h2 id="document-count">Your document library</h2>
+              <button id="clear-documents" class="secondary" disabled>
+                Clear uploaded copies
+              </button>
+            </div>
+            <div id="document-list"><p>Loading documents...</p></div>
+          </div>
+          <button data-go="research" id="documents-continue" disabled>
+            Continue to research
+          </button>
+          <div class="note" id="document-note">
+            For the demo, choose the four files from the project's
+            <strong>corpus</strong> folder. Originals stay in that folder.
+            Uploaded copies are saved locally and used by new research runs.
+            Evaluation, recovery and search benchmarks use the fixed sample set.
+          </div>
+        </section>
+        <section id="research" class="page">
+          <h1>Research you can inspect.</h1>
+          <p class="intro">
+            Follow the evidence, from the first question to the final review.
+          </p>
+          <p id="research-documents" class="note">
+            Loading document library...
+          </p>
+          <form class="panel question" id="research-form">
+            <div class="section-heading">
+              <label for="question">Research question</label>
+              <label for="provider-mode" class="hint"
+                >Research mode
+                <select id="provider-mode" aria-describedby="provider-hint">
+                  <option value="mock">Offline demo</option>
+                  <option value="live" disabled>Groq live</option>
+                </select>
+              </label>
+            </div>
+            <div class="input-row">
+              <input
+                id="question"
+                required
+                maxlength="1000"
+                value="What makes multi-agent orchestration hard to run in production?"
+              /><button id="run-button" type="submit" disabled>
+                Connecting...
+              </button>
+            </div>
+            <p class="hint" id="provider-hint">
+              Repeatable offline responses. Real workflow execution.
+            </p>
+          </form>
+          <div class="panel flow-panel">
+            <div class="section-heading">
+              <h2>From question to evidence</h2>
+              <span id="run-state" class="hint" role="status"
+                >Ready to run</span
+              >
+            </div>
+            <ol class="flow" id="flow"></ol>
+          </div>
+          <div class="columns">
+            <div class="panel evidence">
+              <div class="section-heading">
+                <h2>Evidence and decisions</h2>
+                <div class="filters" aria-label="Filter claims">
+                  <button data-filter="all" aria-pressed="true">
+                    All claims</button
+                  ><button data-filter="verified" aria-pressed="false">
+                    Accepted</button
+                  ><button data-filter="rejected" aria-pressed="false">
+                    Rejected
+                  </button>
+                </div>
+              </div>
+              <div id="claims">
+                <div class="empty">
+                  <span data-icon="document"></span>
+                  <h3>Your evidence will appear here</h3>
+                  <p>Run a question to inspect each claim, quote and review.</p>
+                </div>
+              </div>
+            </div>
+            <aside class="panel summary">
+              <h2>Run summary</h2>
+              <dl id="summary">
+                <div>
+                  <dt>Model calls</dt>
+                  <dd>-</dd>
+                </div>
+                <div>
+                  <dt>Proposed claims</dt>
+                  <dd>-</dd>
+                </div>
+                <div>
+                  <dt>Accepted claims</dt>
+                  <dd>-</dd>
+                </div>
+                <div>
+                  <dt>Elapsed time</dt>
+                  <dd>-</dd>
+                </div>
+              </dl>
+              <h2>Activity</h2>
+              <ol id="activity" class="activity">
+                <li>Ready for your first run</li>
+              </ol>
+            </aside>
+          </div>
+          <details class="panel report" id="report-panel" hidden>
+            <summary>View generated brief and call trace</summary>
+            <p class="hint" id="report-hint">
+              The offline provider produces placeholder prose to test the
+              workflow. Acceptance does not guarantee factual accuracy.
+            </p>
+            <pre id="report"></pre>
+            <div id="trace" class="table-wrap"></div>
+          </details>
+        </section>
+        <section id="architecture" class="page" hidden>
+          <h1>A clear path from question to evidence.</h1>
+          <p class="intro">
+            Five steps, with usage control and saved progress underneath.
+          </p>
+          <div class="panel diagram">
+            <img
+              src="/demo/architecture"
+              alt="Quorum flow: plan, research local documents, check quotes, review claims with a two-of-three majority, then write. Usage control and saved progress support the workflow."
+              width="1672"
+              height="941"
+            />
+          </div>
+          <div class="note">
+            Three review instructions can use the same model. Different
+            instructions do not guarantee independent errors.
+          </div>
+          <button data-go="research">Try a research run</button>
+        </section>
+        <section id="evaluation" class="page" hidden>
+          <h1>Does the extra checking help?</h1>
+          <p class="intro">
+            The same 84 claims. Three ways to decide what reaches the writer.
+          </p>
+          <div class="action-row">
+            <button id="evaluate-button">Run evaluation</button
+            ><span id="evaluation-status" class="hint" role="status"
+              >Recorded measurement, ready to rerun</span
+            >
+          </div>
+          <div id="evaluation-results"></div>
+          <div class="note">
+            An offline controlled test with deliberately inserted mistakes and
+            noisy reviews. This measures claim acceptance, not real-world
+            accuracy or final-report correctness.
+          </div>
+        </section>
+        <section id="recovery" class="page" hidden>
+          <h1>Keep the work. Recover the rest.</h1>
+          <p class="intro">
+            Stop a real research process, then restart it from saved progress.
+          </p>
+          <div class="action-row">
+            <button id="recover-button">Run recovery test</button
+            ><span id="recovery-status" class="hint" role="status"
+              >Ready to test</span
+            >
+          </div>
+          <div class="recovery-sequence">
+            <div>
+              <span class="step-number">1</span>
+              <h2>Start research</h2>
+              <p>Wait for both completed and in-flight work.</p>
+            </div>
+            <div>
+              <span class="step-number">2</span>
+              <h2>Stop the process</h2>
+              <p>Interrupt the worker while a task is running.</p>
+            </div>
+            <div>
+              <span class="step-number">3</span>
+              <h2>Resume safely</h2>
+              <p>Reuse saved results and finish interrupted tasks.</p>
+            </div>
+          </div>
+          <div id="recovery-results" class="panel">
+            <div class="empty">
+              <span data-icon="refresh"></span>
+              <h3>Put recovery to the test</h3>
+              <p>
+                This runs an actual process-kill check using offline model
+                responses.
+              </p>
+            </div>
+          </div>
+          <div class="note">
+            Saved work survives. Usage counters and exhausted-model state
+            currently restart with the new process. Work finished but not yet
+            saved may need to run again.
+          </div>
+        </section>
+        <section id="retrieval" class="page" hidden>
+          <h1>Find the evidence. Measure the misses.</h1>
+          <p class="intro">
+            A small keyword-search baseline: 14 questions across 8 document
+            passages.
+          </p>
+          <div class="action-row">
+            <button id="retrieval-button">Test document search</button
+            ><span id="retrieval-status" class="hint" role="status"
+              >Recorded measurement, ready to rerun</span
+            >
+          </div>
+          <div id="retrieval-results"></div>
+          <div class="note">
+            These are authored questions over a small corpus, not a held-out
+            benchmark. The next step is real user questions and a comparison
+            with meaning-based retrieval.
+          </div>
+        </section>
+        <section id="limits" class="page" hidden>
+          <h1>The limit belongs to the model.</h1>
+          <p class="intro">
+            Two names for one model must share the same allowance.
+          </p>
+          <div class="comparison">
+            <article class="panel">
+              <h2>Before the fix</h2>
+              <div class="alias">
+                <span>Mid tier</span><span>Separate allowance</span>
+              </div>
+              <div class="alias">
+                <span>Fast tier</span><span>Separate allowance</span>
+              </div>
+              <p class="negative">
+                Both pointed to the same model, but counted usage separately.
+              </p>
+            </article>
+            <article class="panel">
+              <h2>After the fix</h2>
+              <div class="alias">
+                <span>Mid + Fast tiers</span><span>One shared allowance</span>
+              </div>
+              <p class="positive">
+                Consumption and daily exhaustion are tracked by the actual model
+                ID.
+              </p>
+            </article>
+          </div>
+          <div class="panel">
+            <div class="section-heading">
+              <h2>Same work. Different waiting time.</h2>
+              <span class="hint">Recorded offline benchmark</span>
+            </div>
+            <div id="limit-results"></div>
+            <p class="hint">
+              Timings vary by machine. Both runs use the same question and
+              repeatable responses.
+            </p>
+          </div>
+          <div class="comparison plain">
+            <div>
+              <h2>Temporary limit</h2>
+              <p>Wait until capacity becomes available.</p>
+            </div>
+            <div>
+              <h2>Daily allowance exhausted</h2>
+              <p>Try a different available model, or fail promptly.</p>
+            </div>
+          </div>
+          <div class="note">
+            Current limiters are per run. Multiple simultaneous runs need shared
+            quota coordination before production use.
+          </div>
+        </section>
+      </main>
+      <footer>
+        <span>Quorum / Local research workspace</span
+        ><span>Evidence before assumptions.</span>
+      </footer>
+    </div>
+  </body>
+</html>

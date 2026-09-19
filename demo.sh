@@ -1,40 +1,31 @@
 #!/usr/bin/env bash
-# Three-minute walkthrough. Runs fully offline -- no API key, no network, no cost.
-#   ./demo.sh
+# Offline recording demo. Add --full to include the ~50-second throttled benchmark.
 set -euo pipefail
+cd "$(dirname "$0")"
 PY=${PY:-.venv/bin/python}
 Q="What makes multi-agent orchestration hard to run in production?"
-RID=$($PY -c "import uuid;print(uuid.uuid4().hex[:12])")
-rm -f demo.db
-hr() { printf '\n\033[1m%s\033[0m\n%s\n' "$1" "$(printf '%.0s-' {1..70})"; }
+mkdir -p .eval
+RID=$($PY -c 'import uuid; print(uuid.uuid4().hex[:12])')
+DB=".eval/demo-$RID.db"
+hr() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
-hr "1. A run. Planner emits a DAG, researchers fan out, verifiers vote, synthesizer writes."
-$PY -m quorum --db demo.db run "$Q" --mock --unthrottled --resume "$RID" 2>&1 | tail -32
+hr "1. Offline research: plan, retrieve, filter, verify, synthesize."
+"$PY" -m quorum --db "$DB" run "$Q" --mock --unthrottled --resume "$RID" --quiet
 
-hr "2. Every model call is a trace span: tier, tokens, latency, time lost to throttling."
-$PY -m quorum --db demo.db trace "$RID"
+hr "2. Trace: successful model calls, tokens, latency, throttle wait."
+"$PY" -m quorum --db "$DB" trace "$RID"
 
-hr "3. Same run under real free-tier ceilings (30 req/min, 6k tok/min). Identical work."
-$PY -m quorum --db demo.db run "$Q" --mock --quiet 2>&1 \
-  | grep -E "wall_s|sum_call_s|effective_parallelism|throttle_wait_s|tier_downgrades"
-echo "   ^ same calls, same tokens, an order of magnitude more wall clock."
-echo "     The token ceiling sets concurrency, not the worker count."
+hr "3. Real process-kill recovery."
+"$PY" evals/check_resume.py
 
-hr "4. Crash recovery. Kill a run mid-flight, resume it, count the replayed work."
-RID2=$($PY -c "import uuid;print(uuid.uuid4().hex[:12])")
-$PY -m quorum --db demo.db run "$Q" --mock --mock-latency 0.8 --resume "$RID2" >/dev/null 2>&1 &
-PID=$!; $PY -c "import time;time.sleep(9)"; kill -9 $PID 2>/dev/null || true; wait $PID 2>/dev/null || true
-$PY -c "
-from quorum.core import Store; from collections import Counter
-print('   at kill -9:', dict(Counter(n.status.value for n in Store('demo.db').load_nodes('$RID2').values())))"
-$PY -m quorum --db demo.db run "$Q" --mock --mock-latency 0.8 --resume "$RID2" 2>&1 \
-  | grep -E "\[resume\]|requests_used|^  nodes"
-echo "   ^ completed nodes reused; nodes caught mid-flight requeued rather than silently dropped."
+hr "4. Same 84 claims, three acceptance rules."
+"$PY" evals/run_eval.py
 
-hr "5. Does the orchestration earn its cost? Fault-injection eval, known defect rates."
-$PY evals/run_eval.py 2>&1 | tail -12
+hr "5. Retrieval recall, including the miss."
+"$PY" evals/retrieval_eval.py
 
-hr "6. The same pipeline in LangGraph, for comparison. See docs/langgraph-comparison.md."
-$PY -m quorum.lg "$Q" 2>&1 | tail -7
-
-hr "Done. Full writeup: README.md"
+if [[ "${1:-}" == "--full" ]]; then
+    hr "6. Matched engines and the slower rate-limited run."
+    "$PY" evals/benchmark.py --throttled
+fi
+hr "Recording script: docs/loom-prep.md"

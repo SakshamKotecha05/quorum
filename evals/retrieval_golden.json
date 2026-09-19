@@ -1,0 +1,16 @@
+[
+  {"query": "Why do more workers fail to make a rate limited system faster?", "relevant": ["limits#0"]},
+  {"query": "How can I prevent concurrent requests from overspending the inference quota?", "relevant": ["limits#0"]},
+  {"query": "How do I avoid a retry storm after a provider throttle?", "relevant": ["limits#1"]},
+  {"query": "Which techniques reduce token and request consumption?", "relevant": ["limits#1"]},
+  {"query": "What should survive if a worker process dies?", "relevant": ["state#0"]},
+  {"query": "What is the tradeoff between per node and per stage checkpoints?", "relevant": ["state#0"]},
+  {"query": "What are the main bottlenecks besides model inference?", "relevant": ["state#1"]},
+  {"query": "Why are supervisor executions easier to trace than peer handoffs?", "relevant": ["patterns#0"]},
+  {"query": "What is hub fragility and translation loss?", "relevant": ["patterns#0"]},
+  {"query": "Should a subagent receive the entire conversation and supervisor prompt?", "relevant": ["patterns#1"]},
+  {"query": "How can we measure verification when labelled data is unavailable?", "relevant": ["evaluation#0"]},
+  {"query": "Why is monitoring autonomous agents harder than traditional software?", "relevant": ["evaluation#1"]},
+  {"query": "How do I test recovery and evaluate silent failures?", "relevant": ["state#0", "evaluation#1"]},
+  {"query": "How do noisy judges and different evaluation criteria affect voting?", "relevant": ["evaluation#0"]}
+]

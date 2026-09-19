@@ -331,40 +331,27 @@ def test_resume_retries_failed_nodes(tmp_path):
 
 
 def test_resume_reuses_completed_nodes(tmp_path):
-    """Kill a run mid-flight, resume it, and confirm the finished work is not redone."""
-    q, store, provider = _quorum(tmp_path)
+    """Interrupt actual verifier calls, then resume with a fresh orchestrator."""
+    q, store, _ = _quorum(tmp_path)
+    original = q.llm.structured
 
-    async def crash_after_research():
-        run_id = "crashme"
-        original = q.llm.structured
-        state = {"n": 0}
+    async def interrupted(*args, **kwargs):
+        if kwargs.get("role", "").startswith("verifier:"):
+            raise asyncio.CancelledError("simulated process interruption")
+        return await original(*args, **kwargs)
 
-        async def flaky(*a, **kw):
-            if kw.get("role") == "verifier":
-                state["n"] += 1
-                if state["n"] > 1:
-                    raise RuntimeError("simulated process death")
-            return await original(*a, **kw)
+    q.llm.structured = interrupted
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(q.run("what constrains parallelism?", run_id="crashme"))
+    before = store.load_nodes("crashme")
+    completed = {nid: n.output for nid, n in before.items() if n.status is Status.DONE}
+    assert completed
+    assert any(n.status is Status.RUNNING for n in before.values())
 
-        q.llm.structured = flaky
-        try:
-            await q.run("what constrains parallelism?", run_id=run_id)
-        except Exception:
-            pass
-        q.llm.structured = original
-        return run_id
-
-    run_id = asyncio.run(crash_after_research())
-    done_before = sum(
-        1 for n in store.load_nodes(run_id).values() if n.status is Status.DONE
-    )
-    assert done_before > 0
-
-    calls_before = provider.calls
-    res = asyncio.run(q.run("what constrains parallelism?", run_id=run_id, resume=True))
-    replayed = provider.calls - calls_before
-
-    assert res.status == "done"
-    assert replayed < done_before, (
-        f"resume replayed {replayed} calls but {done_before} nodes were already done"
-    )
+    resumed, _, provider = _quorum(tmp_path)
+    result = asyncio.run(resumed.run("ignored", run_id="crashme", resume=True))
+    after = store.load_nodes("crashme")
+    assert result.status == "done"
+    assert all(n.status is Status.DONE for n in after.values())
+    assert {nid: after[nid].output for nid in completed} == completed
+    assert provider.calls == len(after) - len(completed)

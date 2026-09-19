@@ -10,7 +10,6 @@ checkpointing every node transition so a killed run resumes from where it stoppe
 from __future__ import annotations
 
 import asyncio
-import math
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -307,7 +306,7 @@ class Quorum:
                     if cid in votes:
                         votes[cid].append(bool(ok))
 
-        need = math.ceil(len(self.lenses) / 2)
+        need = len(self.lenses) // 2 + 1
         verified = [c for c in kept if sum(votes[c.id]) >= need]
         killed = len(kept) - len(verified)
         _emit("quorum", {"verified": len(verified), "rejected_by_quorum": killed,

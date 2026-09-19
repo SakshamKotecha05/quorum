@@ -1,24 +1,20 @@
-"""Evaluation harness.
+"""Controlled verification ablation on a single frozen claim workload.
 
-Question under test: does the orchestration actually buy anything over one agent
-making one call, and does a 3-lens verifier quorum beat a single noisy judge?
-
-Method: fault injection. The mock researcher emits claims with a known defect rate
-in two modes -- fabricated citations (quote exists nowhere) and overreach (quote is
-real and correctly cited, claim overstates it). Because ground truth is known per
-claim, precision and recall of each configuration are exact, with no hand-labelled
-corpus needed.
-
-Every configuration sees identical claims: fixtures are seeded from claim content, so
-the only variable across rows is the verification strategy.
+Generate each question once with the full pipeline, retain claims and per-lens
+votes, then score no filtering, prefilter + support, and prefilter + majority.
+The support-only row reuses the exact support votes from the three-lens row.
+Counts are verification calls only; generation and synthesis are excluded.
+This measures synthetic fault rejection, not live-model or final-prose accuracy.
 
 Run: python evals/run_eval.py
 """
 from __future__ import annotations
 
 import asyncio
-import re
-import statistics
+import hashlib
+import json
+import platform
+from importlib.metadata import version
 import sys
 from pathlib import Path
 
@@ -65,10 +61,10 @@ def _make(lenses: int, tmp: Path):
 
 
 def score(claims: list[dict], truth: dict[str, bool], shipped_key="outcome") -> dict:
-    """Confusion matrix over claims that reached the final report."""
+    """Confusion matrix over claims accepted for synthesis, before prose generation."""
     tp = fp = fn = tn = 0
     for c in claims:
-        grounded = truth.get(_key(c["text"], c["quote"]), True)
+        grounded = truth[_key(c["text"], c["quote"])]
         shipped = c[shipped_key] == "verified" if shipped_key in c else True
         if shipped and grounded:
             tp += 1
@@ -93,47 +89,52 @@ def score(claims: list[dict], truth: dict[str, bool], shipped_key="outcome") -> 
     }
 
 
-async def main() -> None:
-    tmp = ROOT / ".eval"
+async def main(output_dir: Path | None = None) -> None:
+    tmp = output_dir or ROOT / ".eval"
     tmp.mkdir(exist_ok=True)
     rows: list[tuple[str, dict, dict]] = []
 
-    # --- baseline: one agent, one call, no plan, no verification ------------ #
-    q, truth = _make(1, tmp)
-    b_claims, b_calls, b_wall = [], 0, 0.0
+    q, truth = _make(3, tmp)
+    workloads = []
+    verifier_calls = 0
     for question in QUESTIONS:
-        r = await q.baseline(question)
-        b_claims += r["claims"]
-        b_calls += r["llm_calls"]
-        b_wall += r["wall_s"]
-    rows.append(("single agent, no verification",
-                 score(b_claims, truth),
-                 {"llm_calls": b_calls, "wall_s": round(b_wall, 2)}))
+        result = await q.run(question)
+        if result.status != "done" or any(
+            c["outcome"] != "rejected_by_prefilter" and len(c["votes"]) != 3
+            for c in result.claims
+        ):
+            raise RuntimeError("incomplete evaluation run")
+        workloads.append({"question": question, "claims": result.claims})
+        verifier_calls += result.metrics["verifier_calls"]
 
-    # --- orchestrated, 1 lens and 3 lenses ---------------------------------- #
-    for lenses in (1, 3):
-        q, truth = _make(lenses, tmp)
-        claims, calls, wall, par = [], 0, 0.0, []
-        for question in QUESTIONS:
-            res = await q.run(question)
-            claims += res.claims
-            calls += res.metrics["llm_calls"]
-            wall += res.metrics["wall_s"]
-            par.append(res.metrics["effective_parallelism"])
-        rows.append((
-            f"quorum, {lenses} lens{'es' if lenses > 1 else ''} "
-            f"(majority {lenses // 2 + 1}/{lenses})",
-            score(claims, truth),
-            {"llm_calls": calls, "wall_s": round(wall, 2),
-             "parallelism": round(statistics.mean(par), 2)},
-        ))
+    frozen = [c for workload in workloads for c in workload["claims"]]
+    unverified = [{**c, "outcome": "verified"} for c in frozen]
+    support = [{**c, "outcome": "verified" if c["votes"] and c["votes"][0]
+                else "rejected"} for c in frozen]
+    for name, claims, calls in (
+        ("no verification", unverified, 0),
+        ("prefilter + 1 lens", support, verifier_calls // 3),
+        ("prefilter + 3 lenses (2/3)", frozen, verifier_calls),
+    ):
+        rows.append((name, score(claims, truth), {"llm_calls": calls}))
+
+    identity = [{k: c[k] for k in ("id", "text", "quote", "source_id")}
+                for c in frozen]
+    digest = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+    (tmp / "verification.json").write_text(json.dumps({
+        "python": platform.python_version(), "pydantic": version("pydantic"),
+        "workload_sha256": digest, "workloads": workloads, "truth": truth,
+        "rows": [{"configuration": name, **scores, "verifier_calls": extra["llm_calls"]}
+                 for name, scores, extra in rows],
+    }, indent=2) + "\n")
+    q.store.db.close()
 
     # --- report -------------------------------------------------------------- #
     print(f"\n{len(QUESTIONS)} questions | injected defects: "
           f"{P_FABRICATED:.0%} fabricated citation, {P_OVERREACH:.0%} overreach | "
           f"per-lens judge error {JUDGE_ERROR:.0%}\n")
     hdr = ["configuration", "claims", "bad", "leaked", "leak%", "wrongly cut",
-           "prec", "recall", "F1", "calls"]
+           "prec", "recall", "F1", "verify calls"]
     w = [34, 7, 5, 7, 7, 12, 6, 7, 6, 6]
     print("  ".join(h.ljust(x) for h, x in zip(hdr, w)))
     print("  ".join("-" * x for x in w))
@@ -150,9 +151,8 @@ async def main() -> None:
     print(f"\nhallucination leak rate: {base['leak_rate']:.0%} unverified "
           f"-> {one['leak_rate']:.0%} with 1 lens "
           f"-> {three['leak_rate']:.0%} with a 3-lens majority")
-    print(f"cost of the 3-lens quorum: {rows[2][2]['llm_calls']} calls vs "
-          f"{rows[0][2]['llm_calls']} for the baseline "
-          f"({rows[2][2]['llm_calls'] / max(1, rows[0][2]['llm_calls']):.1f}x)")
+    print("Call counts cover verification only; all rows share the same generated claims.")
+    print(f"Frozen workload: {digest}; evidence: .eval/verification.json")
     print(f"true claims wrongly discarded by the quorum: {three['false_reject']} "
           f"of {three['proposed'] - three['defective']}")
 

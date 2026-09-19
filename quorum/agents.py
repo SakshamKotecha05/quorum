@@ -217,8 +217,8 @@ async def verify_batch(
     )
     obj, call = await ctx.llm.structured(
         # The lens must be part of the role, not just the system prompt: it is what
-        # makes the three judges independent. With a shared role they agree by
-        # construction and a majority vote degenerates into a single judge.
+        # gives mock lenses distinct error seeds. Live calls use different criteria
+        # but may share a model, so their errors are not necessarily independent.
         role=f"verifier:{lens}",
         system=VERIFIER_SYS.format(lens=LENSES[lens]),
         user=items,

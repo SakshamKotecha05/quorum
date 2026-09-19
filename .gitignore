@@ -10,3 +10,8 @@ prices.json
 .env
 *.pdf
 demo.db
+
+.DS_Store
+.gstack/
+
+.vercel/

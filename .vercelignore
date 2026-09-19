@@ -1,0 +1,16 @@
+.git
+.venv
+.env
+.env.*
+.eval
+.gstack
+**/__pycache__
+.pytest_cache
+*.db
+*.db-wal
+*.db-shm
+docs/loom/*.md
+docs/loom/*.txt
+docs/loom/*.command
+docs/loom-prep.md
+**/.DS_Store

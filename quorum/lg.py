@@ -12,7 +12,6 @@ Read `docs/langgraph-comparison.md` for the conclusions. Run both with:
 from __future__ import annotations
 
 import asyncio
-import math
 import operator
 import sys
 import time
@@ -37,6 +36,7 @@ class GraphState(TypedDict, total=False):
     question: str
     levels: list[list[dict]]      # subtasks grouped into dependency levels
     level: int
+    subtask_order: list[str]
     findings: Annotated[list[dict], operator.add]
     kept: list[dict]
     dropped: int
@@ -83,7 +83,8 @@ def build_graph(ctx: AgentContext, quorum_lenses=LENSES, batch_size: int = 8):
         # dependency set because Send does not inspect it, so validation stays ours.
         validate_dag({s.id: Node(s.id, "r", {}, [d for d in s.depends_on])
                       for s in p.subtasks})
-        return {"levels": dependency_levels(p.subtasks), "level": 0}
+        return {"levels": dependency_levels(p.subtasks), "level": 0,
+                "subtask_order": [s.id for s in p.subtasks]}
 
     async def research_node(state: dict) -> dict:
         st = Subtask.model_validate(state["subtask"])
@@ -98,18 +99,20 @@ def build_graph(ctx: AgentContext, quorum_lenses=LENSES, batch_size: int = 8):
         levels = state["levels"]
         if lvl >= len(levels):
             return "collect"
-        summaries = [f["summary"] for f in state.get("findings", [])]
+        summaries = {f["_id"]: f["summary"] for f in state.get("findings", [])}
         return [
-            Send("research", {"subtask": st, "upstream": summaries})
+            Send("research", {"subtask": st,
+                              "upstream": [summaries[d] for d in st["depends_on"]]})
             for st in levels[lvl]
         ]
 
     def collect(state: GraphState) -> dict:
         claims: list[Claim] = []
-        for f in state.get("findings", []):
-            fin = Findings.model_validate({k: v for k, v in f.items() if k != "_id"})
-            for i, c in enumerate(fin.claims):
-                c.id = f"{f['_id']}.c{i}"
+        by_id = {f["_id"]: f for f in state.get("findings", [])}
+        # Preserve planner order and researcher-assigned IDs so verifier batches
+        # and mock seeds match the custom scheduler, regardless of graph levels.
+        for sid in state["subtask_order"]:
+            fin = Findings.model_validate(by_id[sid])
             claims.extend(fin.claims)
         kept, dropped = prefilter(claims, ctx.corpus)
         return {
@@ -138,7 +141,7 @@ def build_graph(ctx: AgentContext, quorum_lenses=LENSES, batch_size: int = 8):
         for v in state.get("verdicts", []):
             for cid, ok in v["verdicts"].items():
                 votes[cid] = votes.get(cid, 0) + int(bool(ok))
-        need = math.ceil(len(quorum_lenses) / 2)
+        need = len(quorum_lenses) // 2 + 1
         return {"verified": [c for c in state["kept"]
                              if votes.get(c["id"], 0) >= need]}
 
@@ -178,7 +181,7 @@ async def run(question: str, *, mock: bool = True, thread_id: str | None = None,
     gov = Governor(org_rpm=100_000, org_tpm=10_000_000,
                    model_rpm=100_000, model_tpm=10_000_000)
     if mock:
-        provider = MockProvider(latency=(0.15, 0.6))
+        provider = MockProvider(latency=(0.15, 0.45))
         register_mocks(provider, corpus)
     else:
         provider = OpenAICompatProvider()

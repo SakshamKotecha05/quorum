@@ -280,9 +280,15 @@ class Governor:
         # minute regardless of how big the replies actually are. Track what each tier
         # really emits and reserve from that, with headroom.
         self._out_ema: dict[Tier, float] = {t: 400.0 for t in TIERS}
+        # Tier aliases share quota. If aliases declare different ceilings, use
+        # the strictest one rather than multiplying the provider's allowance.
         self.per_model = {
-            t: RateLimiter(model_rpm or s.rpm, model_tpm or s.tpm, s.name)
-            for t, s in TIERS.items()
+            name: RateLimiter(
+                model_rpm or min(s.rpm for s in TIERS.values() if s.name == name),
+                model_tpm or min(s.tpm for s in TIERS.values() if s.name == name),
+                name,
+            )
+            for name in dict.fromkeys(s.name for s in TIERS.values())
         }
         self._lock = asyncio.Lock()
 
@@ -304,14 +310,14 @@ class Governor:
         # a merely busy tier is skipped only if a cheaper one is idle.
         chosen, wanted = tier, tier
         while chosen is not None:
-            if self.per_model[chosen].headroom(est) < 5.0:
+            if self.per_model[TIERS[chosen].name].headroom(est) < 5.0:
                 break
             nxt = DOWNGRADE[chosen]
             if nxt is None:
                 break
             chosen = nxt
-        if chosen is None or self.per_model[chosen].exhausted_until == math.inf:
-            alive = [t for t in TIERS if self.per_model[t].exhausted_until != math.inf]
+        if chosen is None or self.per_model[TIERS[chosen].name].exhausted_until == math.inf:
+            alive = [t for t in TIERS if self.per_model[TIERS[t].name].exhausted_until != math.inf]
             if not alive:
                 raise Exhausted(
                     "every configured model is out of daily quota; try again "
@@ -321,7 +327,7 @@ class Governor:
         if chosen is not wanted:
             self.downgrades += 1
 
-        waited = await self.per_model[chosen].acquire(est)
+        waited = await self.per_model[TIERS[chosen].name].acquire(est)
         waited += await self.org.acquire(est)
         return Grant(
             tier=chosen,
@@ -332,7 +338,7 @@ class Governor:
         )
 
     async def settle(self, grant: Grant, usage: Usage) -> None:
-        await self.per_model[grant.tier].settle(grant.est_tokens, usage.total)
+        await self.per_model[grant.model].settle(grant.est_tokens, usage.total)
         await self.org.settle(grant.est_tokens, usage.total)
         async with self._lock:
             self.tokens_used += usage.total
@@ -341,7 +347,7 @@ class Governor:
             self._out_ema[grant.tier] = 0.7 * prev + 0.3 * usage.output_tokens
 
     async def on_429(self, tier: Tier, retry_after: float, daily: bool = False) -> None:
-        await self.per_model[tier].penalize(retry_after, daily)
+        await self.per_model[TIERS[tier].name].penalize(retry_after, daily)
         # A per-model daily exhaustion says nothing about the org-wide bucket, so
         # never park every other model because one ran out of its own quota.
         if not daily:
@@ -381,7 +387,7 @@ class Governor:
             "http_429": sum(l.throttle_429 for l in self._limiters),
             "out_tok_ema": {t.value: int(v) for t, v in self._out_ema.items()},
             "exhausted_models": [
-                TIERS[t].name for t, l in self.per_model.items()
+                name for name, l in self.per_model.items()
                 if l.exhausted_until == math.inf
             ],
         }
